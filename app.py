@@ -145,6 +145,38 @@ def generate_json(
         return raw_text, None, f"JSON parse error: {e}"
 
 
+def generate_raw_text(
+    prompt_text: str,
+    transcript_text: str,
+) -> tuple[str, str | None]:
+    """
+    Simpler helper: call Gemini and just return raw text (no JSON parsing).
+    Returns (raw_text, error_or_none).
+    """
+    client, err = get_gemini_client()
+    if err:
+        return "", err
+
+    # Replace {{TRANSCRIPT}} if present; otherwise append transcript
+    if "{{TRANSCRIPT}}" in prompt_text:
+        filled_prompt = prompt_text.replace("{{TRANSCRIPT}}", transcript_text)
+    else:
+        filled_prompt = f"{prompt_text.strip()}\n\nTranscript:\n{transcript_text}"
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=filled_prompt,
+            config=genai.types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=1024,
+            ),
+        )
+        raw_text = response.text or ""
+        return raw_text, None
+    except Exception as e:
+        return "", f"Gemini API error: {e}"
+
 # -----------------------
 # Evaluation / Scoring Helpers
 # -----------------------
@@ -516,132 +548,65 @@ st.caption(
 )
 
 # -----------------------
-# 3. Run Prompt A/B with Gemini
+# 3. Run Prompt A/B — Raw Outputs Only
 # -----------------------
 st.markdown("---")
-st.header("3. Run Prompt A/B with Gemini")
+st.header("3. Run Prompt A/B with Gemini — Raw Outputs")
 
 st.markdown(
     """
-    Click the button below to run **Prompt A** and **Prompt B** on the same transcript using Gemini.  
-    Optionally, run each prompt twice (A1/A2 and B1/B2) to estimate consistency.
+    For this MVP, we focus on a qualitative comparison: run **Prompt A** and **Prompt B** on the same transcript
+    and show the raw model outputs side-by-side. This makes it easy to see which prompt produces clearer,
+    more useful structure for downstream analytics.
     """
 )
 
 run_twice = st.checkbox(
-    "Run each prompt twice to estimate consistency (A1/A2 and B1/B2)",
-    value=True,
-    help="If checked, each prompt is executed twice with the same settings. We compare the two outputs for consistency.",
+    "Run each prompt twice (A1/A2 and B1/B2)",
+    value=False,
+    help="If checked, each prompt is executed twice so you can eyeball consistency between runs.",
 )
 
-if st.button("Run A/B JSON extraction and evaluation"):
+if st.button("Run A/B and show raw outputs"):
     transcript = st.session_state.get("transcript_text", "").strip()
     if not transcript:
         st.error("Transcript is empty. Please paste or load a transcript in section 1.")
     else:
-        required_keys = [k.strip() for k in schema_keys_str.split(",") if k.strip()]
-
         # --- Prompt A runs ---
         with st.spinner("Calling Gemini for Prompt A (run 1)..."):
-            raw_a1, json_a1, err_a1 = generate_json(
+            raw_a1, err_a1 = generate_raw_text(
                 prompt_text=prompt_a_text,
                 transcript_text=transcript,
-                schema_keys=required_keys,
             )
 
         raw_a2 = None
-        json_a2 = None
         err_a2 = None
         if run_twice:
             with st.spinner("Calling Gemini for Prompt A (run 2)..."):
-                raw_a2, json_a2, err_a2 = generate_json(
+                raw_a2, err_a2 = generate_raw_text(
                     prompt_text=prompt_a_text,
                     transcript_text=transcript,
-                    schema_keys=required_keys,
                 )
-
-        # Choose a parsed JSON for metrics (prefer first successful)
-        parsed_a = json_a1 or json_a2
 
         # --- Prompt B runs ---
         with st.spinner("Calling Gemini for Prompt B (run 1)..."):
-            raw_b1, json_b1, err_b1 = generate_json(
+            raw_b1, err_b1 = generate_raw_text(
                 prompt_text=prompt_b_text,
                 transcript_text=transcript,
-                schema_keys=required_keys,
             )
 
         raw_b2 = None
-        json_b2 = None
         err_b2 = None
         if run_twice:
             with st.spinner("Calling Gemini for Prompt B (run 2)..."):
-                raw_b2, json_b2, err_b2 = generate_json(
+                raw_b2, err_b2 = generate_raw_text(
                     prompt_text=prompt_b_text,
                     transcript_text=transcript,
-                    schema_keys=required_keys,
                 )
 
-        parsed_b = json_b1 or json_b2
-
-        # --- Compute metrics for A & B ---
-        metrics_a = evaluate_prompt_output(
-            parsed=parsed_a,
-            raw_1=raw_a1 or "",
-            raw_2=raw_a2,
-            required_keys=required_keys,
-            transcript_text=transcript,
-        )
-        metrics_b = evaluate_prompt_output(
-            parsed=parsed_b,
-            raw_1=raw_b1 or "",
-            raw_2=raw_b2,
-            required_keys=required_keys,
-            transcript_text=transcript,
-        )
-
-        # --- Comparison table ---
-        rows = []
-        for label, m in [("A", metrics_a), ("B", metrics_b)]:
-            rows.append(
-                {
-                    "Prompt": label,
-                    "Compliance": m["compliance"],
-                    "Coverage": f"{m['coverage']:.2f}",
-                    "Consistency": f"{m['consistency']:.2f}",
-                    "Risk (items without evidence)": m["risk_count"],
-                    "Items Checked": m["total_items"],
-                    "Normalized Risk": f"{m['normalized_risk']:.2f}",
-                    "Total Score": f"{m['total_score']:.3f}",
-                }
-            )
-
-        st.subheader("Prompt A vs Prompt B — Metrics Comparison")
-        st.table(rows)
-
-        # --- Declare winner ---
-        score_a = metrics_a["total_score"]
-        score_b = metrics_b["total_score"]
-
-        if score_a > score_b:
-            st.success(
-                f"Prompt A wins with a higher total score ({score_a:.3f} vs {score_b:.3f}). "
-                "This suggests Prompt A is better under the current weighting of compliance, coverage, consistency, and risk."
-            )
-        elif score_b > score_a:
-            st.success(
-                f"Prompt B wins with a higher total score ({score_b:.3f} vs {score_a:.3f}). "
-                "This suggests Prompt B is better under the current weighting of compliance, coverage, consistency, and risk."
-            )
-        else:
-            st.info(
-                f"Prompt A and Prompt B have the same total score ({score_a:.3f}). "
-                "You may want to inspect the raw outputs and individual metrics manually."
-            )
-
-        # --- Side-by-side detailed outputs ---
+        # --- Side-by-side raw outputs ---
         st.markdown("---")
-        st.subheader("Detailed Outputs")
+        st.subheader("Raw Outputs")
 
         col_a, col_b = st.columns(2)
 
@@ -652,7 +617,7 @@ if st.button("Run A/B JSON extraction and evaluation"):
             if run_twice and err_a2:
                 st.warning(f"Run 2 issue: {err_a2}")
 
-            with st.expander("Raw outputs (Prompt A)", expanded=True):
+            with st.expander("Prompt A outputs", expanded=True):
                 if raw_a1:
                     st.markdown("**Run 1**")
                     st.code(raw_a1, language="json")
@@ -667,11 +632,15 @@ if st.button("Run A/B JSON extraction and evaluation"):
             if run_twice and err_b2:
                 st.warning(f"Run 2 issue: {err_b2}")
 
-
-            with st.expander("Raw outputs (Prompt B)", expanded=True):
+            with st.expander("Prompt B outputs", expanded=True):
                 if raw_b1:
                     st.markdown("**Run 1**")
                     st.code(raw_b1, language="json")
                 if run_twice and raw_b2:
                     st.markdown("**Run 2**")
                     st.code(raw_b2, language="json")
+
+st.caption(
+    "This simplified MVP compares Prompt A vs Prompt B visually using raw Gemini outputs. "
+    "In a future iteration you can re-enable JSON parsing and metrics (compliance, coverage, risk) on top."
+)
