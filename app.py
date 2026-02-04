@@ -144,6 +144,7 @@ def generate_json(
     except Exception as e:
         return raw_text, None, f"JSON parse error: {e}"
 
+
 # -----------------------
 # Evaluation / Scoring Helpers
 # -----------------------
@@ -647,15 +648,11 @@ if st.button("Run A/B JSON extraction and evaluation"):
         with col_a:
             st.markdown("### Prompt A")
             if err_a1:
-                st.error(f"Run 1 error: {err_a1}")
+                st.warning(f"Run 1 issue: {err_a1}")
             if run_twice and err_a2:
-                st.error(f"Run 2 error: {err_a2}")
+                st.warning(f"Run 2 issue: {err_a2}")
 
-            if parsed_a is not None:
-                st.markdown("**Parsed JSON (first successful run)**")
-                st.code(json.dumps(parsed_a, indent=2), language="json")
-
-            with st.expander("Raw outputs (Prompt A)"):
+            with st.expander("Raw outputs (Prompt A)", expanded=True):
                 if raw_a1:
                     st.markdown("**Run 1**")
                     st.code(raw_a1, language="json")
@@ -666,15 +663,12 @@ if st.button("Run A/B JSON extraction and evaluation"):
         with col_b:
             st.markdown("### Prompt B")
             if err_b1:
-                st.error(f"Run 1 error: {err_b1}")
+                st.warning(f"Run 1 issue: {err_b1}")
             if run_twice and err_b2:
-                st.error(f"Run 2 error: {err_b2}")
+                st.warning(f"Run 2 issue: {err_b2}")
 
-            if parsed_b is not None:
-                st.markdown("**Parsed JSON (first successful run)**")
-                st.code(json.dumps(parsed_b, indent=2), language="json")
 
-            with st.expander("Raw outputs (Prompt B)"):
+            with st.expander("Raw outputs (Prompt B)", expanded=True):
                 if raw_b1:
                     st.markdown("**Run 1**")
                     st.code(raw_b1, language="json")
