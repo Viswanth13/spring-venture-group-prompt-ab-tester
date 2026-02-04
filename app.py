@@ -126,6 +126,7 @@ def generate_json(
             config=genai.types.GenerateContentConfig(
                 temperature=0.2,
                 max_output_tokens=512,
+                response_mime_type="application/json",
             ),
         )
         raw_text = response.text or ""
