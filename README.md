@@ -4,6 +4,8 @@
 
 🔗 **Live App:**  
 [Live app](https://spring-venture-group-prompt-ab-tester-viswantht.streamlit.app/)
+
+🔗 **Demo:**  
 [Demo](https://youtu.be/qFRl27vLoN0)
 
 ---
